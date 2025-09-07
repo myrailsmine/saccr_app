@@ -49,6 +49,7 @@ class CalculationStep:
 
 
 
+
 class UnifiedSACCREngine:
     """
     Unified SA-CCR calculation engine containing all 24 Basel regulatory steps.
