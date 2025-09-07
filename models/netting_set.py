@@ -1,12 +1,13 @@
-"""Netting set data models."""
+"""Netting set data model with aggregation methods."""
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Set
 from models.trade import Trade
+from models.enums import AssetClass
 
 @dataclass
 class NettingSet:
-    """Represents a netting set of trades."""
+    """Represents a netting set of trades with aggregation methods."""
     netting_set_id: str
     counterparty: str
     trades: List[Trade]
@@ -26,6 +27,20 @@ class NettingSet:
         """Check if netting set is margined."""
         return self.threshold > 0 or self.mta > 0
     
-    def get_asset_classes(self) -> set:
+    def get_asset_classes(self) -> Set[AssetClass]:
         """Get unique asset classes in the netting set."""
         return set(trade.asset_class for trade in self.trades)
+    
+    def get_currencies(self) -> Set[str]:
+        """Get unique currencies in the netting set."""
+        return set(trade.currency for trade in self.trades)
+    
+    def get_hedging_sets(self) -> Dict[str, List[Trade]]:
+        """Group trades into hedging sets."""
+        hedging_sets = {}
+        for trade in self.trades:
+            key = f"{trade.asset_class.value}_{trade.currency}"
+            if key not in hedging_sets:
+                hedging_sets[key] = []
+            hedging_sets[key].append(trade)
+        return hedging_sets
