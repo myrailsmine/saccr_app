@@ -1,13 +1,14 @@
-"""Trade and financial instrument data models."""
+# models/trade.py
+"""Trade data model with business logic."""
 
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
-from config.regulatory_params import AssetClass, TradeType
+from models.enums import AssetClass, TradeType
 
 @dataclass
 class Trade:
-    """Represents a derivatives trade."""
+    """Represents a derivatives trade with SA-CCR calculation methods."""
     trade_id: str
     counterparty: str
     asset_class: AssetClass
@@ -35,3 +36,17 @@ class Trade:
         if self.is_option_like():
             return self.delta
         return 1.0 if self.notional > 0 else -1.0
+    
+    def get_maturity_bucket(self) -> str:
+        """Get maturity bucket for supervisory factor lookup."""
+        maturity = self.time_to_maturity()
+        if maturity < 2:
+            return "<2y"
+        elif maturity <= 5:
+            return "2-5y"
+        else:
+            return ">5y"
+    
+    def adjusted_notional(self) -> float:
+        """Get adjusted notional amount."""
+        return abs(self.notional)
