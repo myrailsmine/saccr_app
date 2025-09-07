@@ -1449,3 +1449,8 @@ The key issue was the supervisory factor unit conversion - the enterprise
 app stores factors as percentages but expects them to be treated as basis
 points in intermediate calculations, then converted back to decimal.
 """
+
+The key issue was the supervisory factor unit conversion - the enterprise
+app stores factors as percentages but expects them to be treated as basis
+points in intermediate calculations, then converted back to decimal.
+"""
