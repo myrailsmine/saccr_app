@@ -263,3 +263,79 @@ def render_calculation_summary_table(results: Dict[str, Any]):
     
     df = pd.DataFrame(summary_data)
     st.dataframe(df, use_container_width=True, hide_index=True)
+
+def render_input_validation_feedback(validation_result: Dict[str, Any]):
+    """Render input validation feedback."""
+    if validation_result['is_complete']:
+        st.success("✅ All required inputs provided")
+    else:
+        st.error("❌ Missing required information:")
+        for field in validation_result['missing_fields']:
+            st.write(f"   • {field}")
+    
+    if validation_result.get('warnings'):
+        st.warning("⚠️ Warnings:")
+        for warning in validation_result['warnings']:
+            st.write(f"   • {warning}")
+
+
+def render_step_by_step_viewer(calculation_steps, selected_step: int = None):
+    """Render an interactive step-by-step viewer."""
+    if not calculation_steps:
+        st.info("No calculation steps available")
+        return
+    
+    # Step selector
+    step_options = [f"Step {step.step}: {step.title}" for step in calculation_steps]
+    selected_idx = st.selectbox("Select Step to View:", range(len(step_options)), 
+                               format_func=lambda x: step_options[x],
+                               index=selected_step-1 if selected_step and selected_step <= len(calculation_steps) else 0)
+    
+    if selected_idx < len(calculation_steps):
+        step = calculation_steps[selected_idx]
+        
+        # Display step details
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.markdown(f"### {step.title}")
+            st.markdown(step.description)
+            
+            with st.expander("Formula & Calculation", expanded=True):
+                st.code(step.formula, language="text")
+                st.markdown(f"**Result:** {step.result}")
+        
+        with col2:
+            if hasattr(step, 'thinking') and step.thinking:
+                with st.expander("💭 Thinking Process", expanded=False):
+                    st.markdown(step.thinking.get('reasoning', 'No reasoning available'))
+                    if step.thinking.get('key_insight'):
+                        st.info(f"**Key Insight:** {step.thinking['key_insight']}")
+        
+        # Display step data if available
+        if step.data and isinstance(step.data, dict):
+            with st.expander("📊 Step Data", expanded=False):
+                st.json(step.data)
+
+
+def render_trade_comparison_table(trades):
+    """Render a comparison table of trades."""
+    if not trades:
+        st.info("No trades to display")
+        return
+    
+    trade_data = []
+    for trade in trades:
+        trade_data.append({
+            'Trade ID': trade.trade_id,
+            'Asset Class': trade.asset_class.value,
+            'Type': trade.trade_type.value,
+            'Notional': f"${trade.notional:,.0f}",
+            'Currency': trade.currency,
+            'Maturity': f"{trade.time_to_maturity():.1f}y",
+            'MTM': f"${trade.mtm_value:,.0f}",
+            'Delta': f"{trade.delta:.2f}"
+        })
+    
+    df = pd.DataFrame(trade_data)
+    st.dataframe(df, use_container_width=True, hide_index=True)
