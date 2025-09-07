@@ -1,25 +1,28 @@
-"""Main Streamlit application entry point."""
 
 import streamlit as st
-from config.settings import APP_CONFIG
-from ui.styles import apply_custom_styles
+from config.settings import STREAMLIT_CONFIG
+from config.ui_styles import get_custom_css
+from calculations.saccr_engine import ComprehensiveSACCREngine
+from ai.llm_client import LLMClient
 from ui.pages.calculator import render_calculator_page
 from ui.pages.reference import render_reference_page
 from ui.pages.ai_assistant import render_ai_assistant_page
 from ui.pages.portfolio import render_portfolio_page
-from calculations.saccr_engine import SACCREngine
 
 def main():
     """Main application function."""
-    # Configure Streamlit page
-    st.set_page_config(**APP_CONFIG)
+    # Configure Streamlit
+    st.set_page_config(**STREAMLIT_CONFIG)
     
     # Apply custom styles
-    apply_custom_styles()
+    st.markdown(get_custom_css(), unsafe_allow_html=True)
     
-    # Initialize SA-CCR engine
+    # Initialize components
     if 'saccr_engine' not in st.session_state:
-        st.session_state.saccr_engine = SACCREngine()
+        st.session_state.saccr_engine = ComprehensiveSACCREngine()
+    
+    if 'llm_client' not in st.session_state:
+        st.session_state.llm_client = LLMClient()
     
     # Render header
     render_header()
@@ -27,7 +30,7 @@ def main():
     # Sidebar navigation
     page = render_sidebar()
     
-    # Route to appropriate page
+    # Route to pages
     route_to_page(page)
 
 def render_header():
@@ -43,7 +46,7 @@ def render_sidebar():
     """Render sidebar navigation."""
     with st.sidebar:
         st.markdown("### 🤖 LLM Configuration")
-        # LLM configuration logic here
+        render_llm_config()
         
         st.markdown("---")
         st.markdown("### 📊 Navigation")
@@ -52,6 +55,39 @@ def render_sidebar():
             ["🧮 Complete SA-CCR Calculator", "📋 Reference Example", 
              "🤖 AI Assistant", "📊 Portfolio Analysis"]
         )
+
+def render_llm_config():
+    """Render LLM configuration section."""
+    with st.expander("🔧 LLM Setup", expanded=True):
+        base_url = st.text_input("Base URL", value="http://localhost:8123/v1")
+        api_key = st.text_input("API Key", value="dummy", type="password")
+        model = st.text_input("Model", value="llama3")
+        temperature = st.slider("Temperature", 0.0, 1.0, 0.3, 0.1)
+        max_tokens = st.number_input("Max Tokens", 1000, 8000, 4000, 100)
+        
+        if st.button("🔗 Connect LLM"):
+            config = {
+                'base_url': base_url,
+                'api_key': api_key,
+                'model': model,
+                'temperature': temperature,
+                'max_tokens': max_tokens,
+                'streaming': False
+            }
+            
+            success = st.session_state.llm_client.setup_connection(config)
+            if success:
+                st.success("✅ LLM Connected!")
+            else:
+                st.error("❌ Connection Failed")
+    
+    # Connection status
+    if st.session_state.llm_client.is_connected():
+        st.markdown('<div class="connection-status connected">🟢 LLM Connected</div>', 
+                   unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="connection-status disconnected">🔴 LLM Disconnected</div>', 
+                   unsafe_allow_html=True)
 
 def route_to_page(page: str):
     """Route to the selected page."""
