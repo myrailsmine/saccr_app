@@ -492,6 +492,49 @@ def create_audit_trail_template() -> Dict[str, Any]:
     }
 
 
+def export_calculation_results(results: Dict[str, Any], 
+                              format_type: str = "all") -> Dict[str, Any]:
+    """
+    Export SA-CCR calculation results in specified format(s).
+    
+    Args:
+        results: Complete SA-CCR calculation results
+        format_type: Export format - "csv", "excel", "json", or "all"
+        
+    Returns:
+        Dictionary containing export data for each requested format
+    """
+    exporter = SACCRDataExporter()
+    exports = {}
+    
+    # Extract key information
+    netting_set_id = "unknown"
+    trades = []
+    collateral = []
+    
+    # Try to extract netting set ID from calculation steps
+    if results.get('calculation_steps'):
+        step1 = next((s for s in results['calculation_steps'] if s.step == 1), None)
+        if step1 and hasattr(step1, 'data'):
+            netting_set_id = step1.data.get('netting_set_id', 'unknown')
+    
+    if format_type in ["csv", "all"]:
+        exports['summary_csv'] = exporter.export_summary_csv(results, netting_set_id)
+        exports['steps_csv'] = exporter.export_steps_csv(results.get('calculation_steps', []))
+        
+        # Add portfolio CSV if trade data is available
+        if trades:
+            exports['portfolio_csv'] = exporter.export_portfolio_csv(trades, collateral)
+    
+    if format_type in ["excel", "all"]:
+        exports['excel_workbook'] = exporter.export_excel_workbook(
+            results, trades, collateral
+        )
+    
+    if format_type in ["json", "all"]:
+        exports['json_complete'] = exporter.export_json_complete(results, True)
+    
+    return exports
 # ==============================================================================
 # USAGE EXAMPLES
 # ==============================================================================
