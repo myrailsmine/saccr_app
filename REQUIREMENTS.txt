@@ -1,0 +1,133 @@
+# ==============================================================================
+# REQUIREMENTS.TXT - Modular SA-CCR Application
+# ==============================================================================
+
+# Core Streamlit Framework
+streamlit>=1.28.0
+
+# Data Processing and Analysis
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Data Visualization
+plotly>=5.15.0
+
+# Date and Time Handling
+python-dateutil>=2.8.2
+
+# LangChain for LLM Integration
+langchain>=0.0.350
+langchain-openai>=0.0.5
+
+# HTTP Requests (for LLM API calls)
+requests>=2.31.0
+
+# Mathematical Operations (enhanced calculations)
+scipy>=1.11.0
+
+# Data Validation and Type Hints
+pydantic>=2.4.0
+typing-extensions>=4.7.0
+
+# Configuration Management
+python-dotenv>=1.0.0
+
+# Data Export and File Handling
+openpyxl>=3.1.0  # Excel file support
+xlsxwriter>=3.1.0  # Excel writing
+python-json-logger>=2.0.7
+
+# Testing Framework
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+
+# Code Quality and Linting
+black>=23.7.0
+flake8>=6.0.0
+mypy>=1.5.0
+
+# Documentation
+sphinx>=7.1.0
+sphinx-rtd-theme>=1.3.0
+
+# Development and Debugging
+ipython>=8.14.0
+jupyter>=1.0.0
+
+# Performance Monitoring
+memory-profiler>=0.61.0
+
+# Environment Management
+python-decouple>=3.8
+
+# Logging
+loguru>=0.7.0
+
+# Data Structures and Collections
+dataclasses-json>=0.6.0  # For enhanced dataclass serialization
+
+# Financial Mathematics (optional - for advanced calculations)
+quantlib>=1.31  # Optional: Advanced financial mathematics
+
+# Development Dependencies (optional)
+pre-commit>=3.3.0  # Code quality hooks
+bandit>=1.7.5  # Security linting
+
+# ==============================================================================
+# VERSION CONSTRAINTS AND COMPATIBILITY NOTES
+# ==============================================================================
+
+# Python Version Requirement: >=3.8,<3.12
+# 
+# Key Version Notes:
+# - Streamlit 1.28+ includes latest UI components and performance improvements
+# - LangChain 0.0.350+ includes stable OpenAI integration
+# - Pandas 2.0+ includes performance improvements and better type hints
+# - Plotly 5.15+ includes latest chart types and interactivity features
+# - NumPy 1.24+ includes performance improvements for financial calculations
+#
+# Optional Dependencies:
+# - QuantLib: For advanced financial mathematics (derivatives pricing, etc.)
+# - Pre-commit: For automated code quality checks
+# - Bandit: For security vulnerability scanning
+#
+# Development vs Production:
+# - Remove jupyter, ipython, pytest, black, flake8, mypy for production
+# - Keep only core runtime dependencies for deployment
+
+# ==============================================================================
+# MINIMAL PRODUCTION REQUIREMENTS (Core Dependencies Only)
+# ==============================================================================
+
+# For production deployment, you can use this minimal set:
+# streamlit>=1.28.0
+# pandas>=2.0.0
+# numpy>=1.24.0
+# plotly>=5.15.0
+# python-dateutil>=2.8.2
+# langchain>=0.0.350
+# langchain-openai>=0.0.5
+# requests>=2.31.0
+# pydantic>=2.4.0
+# python-dotenv>=1.0.0
+# openpyxl>=3.1.0
+
+# ==============================================================================
+# INSTALLATION COMMANDS
+# ==============================================================================
+
+# Standard installation:
+# pip install -r requirements.txt
+
+# Development installation with all optional dependencies:
+# pip install -r requirements.txt
+# pip install pre-commit bandit quantlib
+
+# Production installation (minimal):
+# pip install streamlit pandas numpy plotly python-dateutil langchain langchain-openai requests pydantic python-dotenv openpyxl
+
+# Virtual environment setup:
+# python -m venv saccr_env
+# source saccr_env/bin/activate  # On Windows: saccr_env\Scripts\activate
+# pip install -r requirements.txt
