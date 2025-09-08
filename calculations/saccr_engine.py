@@ -1,10 +1,10 @@
 # ==============================================================================
-# ENHANCED SA-CCR ENGINE - MARGINED/UNMARGINED SCENARIOS
+# CORRECTED SA-CCR ENGINE - PROPER MARGINED/UNMARGINED SCENARIO LOGIC
 # ==============================================================================
 
 """
-Enhanced SA-CCR calculation engine that computes both margined and unmargined 
-scenarios and selects the minimum EAD as per Basel requirements.
+Corrected SA-CCR calculation engine that properly applies margined/unmargined 
+scenarios only to the relevant steps as per Basel regulations.
 """
 
 import math
@@ -127,620 +127,275 @@ BASEL_ALPHA = 1.4
 BASEL_CAPITAL_RATIO = 0.08
 
 # ==============================================================================
-# ENHANCED SA-CCR ENGINE WITH DUAL SCENARIOS
+# CORRECTED SA-CCR ENGINE 
 # ==============================================================================
 
-class EnhancedSACCREngine:
+class CorrectedSACCREngine:
     """
-    Enhanced SA-CCR engine that computes both margined and unmargined scenarios
-    and selects the minimum EAD as per Basel regulatory requirements.
+    Corrected SA-CCR engine that properly applies margined/unmargined scenarios
+    only to the relevant steps: 16 (PFE) and 18 (RC).
     """
     
     def __init__(self):
-        """Initialize the enhanced SA-CCR engine."""
+        """Initialize the SA-CCR engine."""
         self.supervisory_factors = SUPERVISORY_FACTORS
         self.supervisory_correlations = SUPERVISORY_CORRELATIONS
         self.collateral_haircuts = COLLATERAL_HAIRCUTS
         self.risk_weight_mapping = RISK_WEIGHT_MAPPING
         
-        # Calculation state
-        self.calculation_steps: List[Dict] = []
-        self.thinking_steps: List[Dict[str, Any]] = []
-        self.assumptions: List[str] = []
-    
+        # Shared calculation results
+        self.shared_steps = {}
+        
     def calculate_dual_scenario_saccr(self, netting_set: NettingSet, 
                                      collateral: List[Collateral] = None) -> Dict[str, Any]:
         """
-        Calculate SA-CCR for both margined and unmargined scenarios and select minimum EAD.
-        
-        This follows Basel regulatory requirement to compute both scenarios and use
-        the approach that yields the lower capital requirement.
+        Calculate SA-CCR for both margined and unmargined scenarios.
+        Only steps 16 (PFE) and 18 (RC) differ between scenarios.
         """
-        print("🔄 Computing SA-CCR for both margined and unmargined scenarios...")
+        print("Computing SA-CCR for both margined and unmargined scenarios...")
         
-        # Scenario 1: Margined (using provided CSA terms)
-        print("📊 Calculating Scenario 1: Margined netting set")
-        margined_results = self._calculate_single_scenario(
-            netting_set=netting_set,
-            collateral=collateral,
-            force_margined=True,
-            scenario_name="Margined"
-        )
+        # Execute shared steps (1-15, 17, 19-24) - same for both scenarios
+        print("Calculating shared steps (1-15, 17, 19-24)...")
+        self._calculate_shared_steps(netting_set, collateral)
         
-        # Scenario 2: Unmargined (ignoring CSA terms)
-        print("📊 Calculating Scenario 2: Unmargined netting set")
-        unmargined_netting_set = NettingSet(
-            netting_set_id=netting_set.netting_set_id + "_UNMARGINED",
-            counterparty=netting_set.counterparty,
-            trades=netting_set.trades,
-            threshold=0.0,  # Force unmargined
-            mta=0.0,
-            nica=0.0
-        )
+        # Calculate scenario-specific steps
+        print("Calculating scenario-specific steps...")
+        margined_results = self._calculate_margined_scenario(netting_set, collateral)
+        unmargined_results = self._calculate_unmargined_scenario(netting_set, collateral)
         
-        unmargined_results = self._calculate_single_scenario(
-            netting_set=unmargined_netting_set,
-            collateral=None,  # No collateral benefit in unmargined scenario
-            force_margined=False,
-            scenario_name="Unmargined"
-        )
-        
-        # Compare and select minimum EAD scenario
-        margined_ead = margined_results['final_results']['exposure_at_default']
-        unmargined_ead = unmargined_results['final_results']['exposure_at_default']
+        # Select minimum EAD scenario
+        margined_ead = margined_results['final_ead']
+        unmargined_ead = unmargined_results['final_ead']
         
         selected_scenario = "Margined" if margined_ead <= unmargined_ead else "Unmargined"
         selected_results = margined_results if margined_ead <= unmargined_ead else unmargined_results
         
-        print(f"✅ Selected scenario: {selected_scenario} (EAD: ${margined_ead if selected_scenario == 'Margined' else unmargined_ead:,.0f})")
+        print(f"Selected scenario: {selected_scenario} (EAD: ${selected_results['final_ead']:,.0f})")
         
-        # Create comprehensive dual scenario results
-        dual_results = {
+        return {
             'scenarios': {
-                'margined': {
-                    'results': margined_results,
-                    'ead': margined_ead,
-                    'rc': margined_results['final_results']['replacement_cost'],
-                    'pfe': margined_results['final_results']['potential_future_exposure'],
-                    'rwa': margined_results['final_results']['risk_weighted_assets'],
-                    'capital': margined_results['final_results']['capital_requirement']
-                },
-                'unmargined': {
-                    'results': unmargined_results,
-                    'ead': unmargined_ead,
-                    'rc': unmargined_results['final_results']['replacement_cost'],
-                    'pfe': unmargined_results['final_results']['potential_future_exposure'],
-                    'rwa': unmargined_results['final_results']['risk_weighted_assets'],
-                    'capital': unmargined_results['final_results']['capital_requirement']
-                }
+                'margined': margined_results,
+                'unmargined': unmargined_results
             },
             'selection': {
                 'selected_scenario': selected_scenario,
-                'selection_rationale': f"Selected {selected_scenario.lower()} scenario with EAD of ${margined_ead if selected_scenario == 'Margined' else unmargined_ead:,.0f} as it yields lower capital requirement",
+                'selection_rationale': f"Selected {selected_scenario.lower()} scenario with lower EAD",
                 'ead_difference': abs(margined_ead - unmargined_ead),
-                'capital_savings': abs(margined_results['final_results']['capital_requirement'] - 
-                                     unmargined_results['final_results']['capital_requirement'])
+                'capital_savings': abs(margined_results['final_capital'] - unmargined_results['final_capital'])
             },
-            'final_results': selected_results['final_results'],
-            'selected_calculation_steps': selected_results['calculation_steps'],
-            'comparison_summary': self._generate_comparison_summary(margined_results, unmargined_results, selected_scenario)
-        }
-        
-        return dual_results
-    
-    def _calculate_single_scenario(self, netting_set: NettingSet, 
-                                  collateral: List[Collateral] = None,
-                                  force_margined: bool = True,
-                                  scenario_name: str = "") -> Dict[str, Any]:
-        """Calculate SA-CCR for a single scenario (margined or unmargined)."""
-        
-        # Reset calculation state
-        self.calculation_steps = []
-        self.thinking_steps = []
-        self.assumptions = []
-        
-        # Add scenario tracking
-        if scenario_name:
-            self.assumptions.append(f"Scenario: {scenario_name} calculation")
-        
-        # Execute calculation steps (same as before, but with scenario tracking)
-        calculation_steps = []
-        
-        # Steps 1-13: PFE calculation (same for both scenarios)
-        for step_num in range(1, 14):
-            step_data = self._execute_step(step_num, netting_set, collateral)
-            calculation_steps.append(step_data)
-        
-        # Get aggregate addon for PFE calculations
-        aggregate_addon = calculation_steps[12]['aggregate_addon']  # Step 13
-        
-        # Step 14: Sum of V, C
-        step14_data = self._step14_sum_v_c_enhanced(netting_set, collateral, scenario_name)
-        calculation_steps.append(step14_data)
-        sum_v = step14_data['sum_v']
-        sum_c = step14_data['sum_c']
-
-        # Step 15: PFE Multiplier
-        step15_data = self._step15_pfe_multiplier_enhanced(sum_v, sum_c, aggregate_addon, scenario_name)
-        calculation_steps.append(step15_data)
-        
-        # Step 16: PFE
-        step16_data = self._step16_pfe_enhanced(step15_data['multiplier'], aggregate_addon, scenario_name)
-        calculation_steps.append(step16_data)
-        
-        # Step 17: TH, MTA, NICA
-        step17_data = self._step17_th_mta_nica(netting_set, scenario_name)
-        calculation_steps.append(step17_data)
-        
-        # Step 18: RC (scenario-specific)
-        step18_data = self._step18_replacement_cost_enhanced(sum_v, sum_c, step17_data, scenario_name)
-        calculation_steps.append(step18_data)
-        
-        # Steps 19-24: Final EAD and RWA calculation
-        for step_num in range(19, 25):
-            if step_num == 21:
-                step_data = self._step21_ead_enhanced(
-                    BASEL_ALPHA, step18_data['rc'], step16_data['pfe'], scenario_name
-                )
-            elif step_num == 24:
-                step23_data = calculation_steps[22]  # Risk weight from step 23
-                step_data = self._step24_rwa_calculation_enhanced(
-                    calculation_steps[20]['ead'], step23_data['risk_weight'], scenario_name
-                )
-            else:
-                step_data = self._execute_step(step_num, netting_set, collateral, scenario_name)
-            calculation_steps.append(step_data)
-        
-        # Store and return results
-        self.calculation_steps = calculation_steps
-        
-        return {
-            'calculation_steps': calculation_steps,
             'final_results': {
-                'replacement_cost': step18_data['rc'],
-                'potential_future_exposure': step16_data['pfe'],
-                'exposure_at_default': calculation_steps[20]['ead'],  # Step 21
-                'risk_weighted_assets': calculation_steps[23]['rwa'],  # Step 24
-                'capital_requirement': calculation_steps[23]['rwa'] * BASEL_CAPITAL_RATIO
+                'replacement_cost': selected_results['rc'],
+                'potential_future_exposure': selected_results['pfe'],
+                'exposure_at_default': selected_results['final_ead'],
+                'risk_weighted_assets': selected_results['rwa'],
+                'capital_requirement': selected_results['final_capital']
             },
-            'scenario_name': scenario_name,
-            'thinking_steps': self.thinking_steps,
-            'assumptions': self.assumptions
+            'shared_calculation_steps': self.shared_steps
         }
     
-    def _execute_step(self, step_num: int, netting_set: NettingSet, 
-                     collateral: List[Collateral] = None, scenario_name: str = "") -> Dict:
-        """Execute a specific calculation step."""
+    def _calculate_shared_steps(self, netting_set: NettingSet, collateral: List[Collateral] = None):
+        """Calculate steps that are identical for both scenarios."""
         
-        if step_num == 1:
-            return self._step1_netting_set_data(netting_set)
-        elif step_num == 2:
-            return self._step2_asset_classification(netting_set.trades)
-        elif step_num == 3:
-            return self._step3_hedging_set(netting_set.trades)
-        elif step_num == 4:
-            return self._step4_time_parameters(netting_set.trades)
-        elif step_num == 5:
-            return self._step5_adjusted_notional(netting_set.trades)
-        elif step_num == 6:
-            return self._step6_maturity_factor_enhanced(netting_set.trades)
-        elif step_num == 7:
-            return self._step7_supervisory_delta(netting_set.trades)
-        elif step_num == 8:
-            return self._step8_supervisory_factor_enhanced(netting_set.trades)
-        elif step_num == 9:
-            return self._step9_adjusted_derivatives_contract_amount_enhanced(netting_set.trades)
-        elif step_num == 10:
-            return self._step10_supervisory_correlation(netting_set.trades)
-        elif step_num == 11:
-            return self._step11_hedging_set_addon(netting_set.trades)
-        elif step_num == 12:
-            return self._step12_asset_class_addon(netting_set.trades)
-        elif step_num == 13:
-            return self._step13_aggregate_addon_enhanced(netting_set.trades)
-        elif step_num == 19:
-            return self._step19_ceu_flag(netting_set.trades)
-        elif step_num == 20:
-            return self._step20_alpha(1)  # Default CEU flag
-        elif step_num == 22:
-            return self._step22_counterparty_info(netting_set.counterparty)
-        elif step_num == 23:
-            return self._step23_risk_weight("Corporate")  # Default
-        else:
-            return {"step": step_num, "error": "Step not implemented"}
-    
-    # ==============================================================================
-    # ENHANCED STEP IMPLEMENTATIONS WITH SCENARIO TRACKING
-    # ==============================================================================
-    
-    def _step14_sum_v_c_enhanced(self, netting_set: NettingSet, 
-                                collateral: List[Collateral] = None,
-                                scenario_name: str = "") -> Dict:
-        """Step 14: V and C calculation with scenario awareness."""
-        sum_v = sum(trade.mtm_value for trade in netting_set.trades)
-        
-        sum_c = 0
-        collateral_details = []
-        
-        # In unmargined scenario, ignore collateral benefits
-        if scenario_name == "Unmargined":
-            sum_c = 0
-            self.assumptions.append(f"{scenario_name}: Collateral benefits ignored in unmargined scenario")
-        elif collateral:
-            for coll in collateral:
-                haircut = self.collateral_haircuts.get(coll.collateral_type, 15.0) / 100
-                effective_value = coll.amount * (1 - haircut)
-                sum_c += effective_value
-                
-                collateral_details.append({
-                    'type': coll.collateral_type.value,
-                    'amount': coll.amount,
-                    'haircut_pct': haircut * 100,
-                    'effective_value': effective_value
-                })
-        else:
-            self.assumptions.append(f"{scenario_name}: No collateral provided")
-        
-        return {
-            'step': 14,
-            'title': f'Sum of V, C within netting set ({scenario_name})',
-            'description': f'Calculate sum of MTM values and effective collateral - {scenario_name} scenario',
-            'data': {
-                'sum_v_mtm': sum_v,
-                'sum_c_collateral': sum_c,
-                'net_exposure': sum_v - sum_c,
-                'collateral_details': collateral_details,
-                'scenario': scenario_name
-            },
-            'formula': 'V = Σ(MTM values), C = Σ(Collateral × (1 - haircut))',
-            'result': f"Sum V: ${sum_v:,.0f}, Sum C: ${sum_c:,.0f} ({scenario_name})",
-            'sum_v': sum_v,
-            'sum_c': sum_c
-        }
-    
-    def _step18_replacement_cost_enhanced(self, sum_v: float, sum_c: float, 
-                                         step17_data: Dict, scenario_name: str = "") -> Dict:
-        """Step 18: RC calculation with scenario-specific logic."""
-        threshold = step17_data['threshold']
-        mta = step17_data['mta']
-        nica = step17_data['nica']
-        
-        net_exposure = sum_v - sum_c
-        
-        # Scenario-specific RC calculation
-        if scenario_name == "Unmargined" or (threshold == 0 and mta == 0):
-            # Unmargined formula
-            rc = max(net_exposure, 0)
-            methodology = f"Unmargined netting set ({scenario_name})"
-            margin_floor = 0
-        else:
-            # Margined formula
-            margin_floor = threshold + mta - nica
-            rc = max(net_exposure, margin_floor, 0)
-            methodology = f"Margined netting set ({scenario_name})"
-        
-        return {
-            'step': 18,
-            'title': f'RC (Replacement Cost) - {scenario_name}',
-            'description': f'Calculate replacement cost - {scenario_name} scenario',
-            'data': {
-                'sum_v': sum_v,
-                'sum_c': sum_c,
-                'net_exposure': net_exposure,
-                'threshold': threshold,
-                'mta': mta,
-                'nica': nica,
-                'rc': rc,
-                'methodology': methodology,
-                'scenario': scenario_name,
-                'margin_floor': margin_floor
-            },
-            'formula': f"RC = max(V - C{'; TH + MTA - NICA' if scenario_name == 'Margined' else ''}; 0)",
-            'result': f"RC: ${rc:,.0f} ({scenario_name})",
-            'rc': rc
-        }
-    
-    # Additional enhanced methods with scenario tracking...
-    def _step15_pfe_multiplier_enhanced(self, sum_v: float, sum_c: float, 
-                                       aggregate_addon: float, scenario_name: str = "") -> Dict:
-        """Step 15: PFE Multiplier with scenario tracking."""
-        net_exposure = sum_v - sum_c
-        
-        if aggregate_addon > 0:
-            exponent = net_exposure / (2 * 0.95 * aggregate_addon)
-            multiplier = min(1.0, 0.05 + 0.95 * math.exp(exponent))
-        else:
-            multiplier = 1.0
-            exponent = 0
-        
-        return {
-            'step': 15,
-            'title': f'PFE Multiplier ({scenario_name})',
-            'description': f'Calculate PFE multiplier - {scenario_name} scenario',
-            'data': {
-                'sum_v': sum_v,
-                'sum_c': sum_c,
-                'net_exposure': net_exposure,
-                'aggregate_addon': aggregate_addon,
-                'exponent': exponent,
-                'multiplier': multiplier,
-                'scenario': scenario_name
-            },
-            'formula': 'Multiplier = min(1, 0.05 + 0.95 × exp((V-C) / (1.9 × AddOn)))',
-            'result': f"PFE Multiplier: {multiplier:.6f} ({scenario_name})",
-            'multiplier': multiplier
-        }
-    
-    def _step16_pfe_enhanced(self, multiplier: float, aggregate_addon: float, 
-                            scenario_name: str = "") -> Dict:
-        """Step 16: PFE calculation with scenario tracking."""
-        pfe = multiplier * aggregate_addon
-        
-        return {
-            'step': 16,
-            'title': f'PFE (Potential Future Exposure) - {scenario_name}',
-            'description': f'Calculate PFE - {scenario_name} scenario',
-            'data': {
-                'multiplier': multiplier,
-                'aggregate_addon': aggregate_addon,
-                'pfe': pfe,
-                'scenario': scenario_name
-            },
-            'formula': 'PFE = Multiplier × Aggregate AddOn',
-            'result': f"PFE: ${pfe:,.0f} ({scenario_name})",
-            'pfe': pfe
-        }
-    
-    def _step17_th_mta_nica(self, netting_set: NettingSet, scenario_name: str = "") -> Dict:
-        """Step 17: TH, MTA, NICA with scenario awareness."""
-        return {
-            'step': 17,
-            'title': f'TH, MTA, NICA ({scenario_name})',
-            'description': f'Extract CSA terms - {scenario_name} scenario',
-            'data': {
-                'threshold': netting_set.threshold,
-                'mta': netting_set.mta,
-                'nica': netting_set.nica,
-                'scenario': scenario_name
-            },
-            'formula': 'Sourced from CSA/ISDA agreements',
-            'result': f"TH: ${netting_set.threshold:,.0f}, MTA: ${netting_set.mta:,.0f}, NICA: ${netting_set.nica:,.0f} ({scenario_name})",
-            'threshold': netting_set.threshold,
-            'mta': netting_set.mta,
-            'nica': netting_set.nica
-        }
-    
-    def _step21_ead_enhanced(self, alpha: float, rc: float, pfe: float, 
-                            scenario_name: str = "") -> Dict:
-        """Step 21: EAD calculation with scenario tracking."""
-        combined_exposure = rc + pfe
-        ead = alpha * combined_exposure
-        
-        return {
-            'step': 21,
-            'title': f'EAD (Exposure at Default) - {scenario_name}',
-            'description': f'Calculate final EAD - {scenario_name} scenario',
-            'data': {
-                'alpha': alpha,
-                'rc': rc,
-                'pfe': pfe,
-                'combined_exposure': combined_exposure,
-                'ead': ead,
-                'scenario': scenario_name
-            },
-            'formula': 'EAD = Alpha × (RC + PFE)',
-            'result': f"EAD: ${ead:,.0f} ({scenario_name})",
-            'ead': ead
-        }
-    
-    def _step24_rwa_calculation_enhanced(self, ead: float, risk_weight: float, 
-                                       scenario_name: str = "") -> Dict:
-        """Step 24: RWA calculation with scenario tracking."""
-        rwa = ead * risk_weight
-        capital_requirement = rwa * BASEL_CAPITAL_RATIO
-        
-        return {
-            'step': 24,
-            'title': f'RWA Calculation ({scenario_name})',
-            'description': f'Calculate RWA and capital - {scenario_name} scenario',
-            'data': {
-                'ead': ead,
-                'risk_weight': risk_weight,
-                'rwa': rwa,
-                'capital_requirement': capital_requirement,
-                'scenario': scenario_name
-            },
-            'formula': 'RWA = Risk Weight × EAD',
-            'result': f"RWA: ${rwa:,.0f} ({scenario_name})",
-            'rwa': rwa
-        }
-    
-    def _generate_comparison_summary(self, margined_results: Dict, unmargined_results: Dict, 
-                                   selected_scenario: str) -> Dict:
-        """Generate comprehensive comparison summary between scenarios."""
-        
-        margined_final = margined_results['final_results']
-        unmargined_final = unmargined_results['final_results']
-        
-        return {
-            'scenario_comparison': {
-                'margined': {
-                    'ead': margined_final['exposure_at_default'],
-                    'rc': margined_final['replacement_cost'],
-                    'pfe': margined_final['potential_future_exposure'],
-                    'rwa': margined_final['risk_weighted_assets'],
-                    'capital': margined_final['capital_requirement']
-                },
-                'unmargined': {
-                    'ead': unmargined_final['exposure_at_default'],
-                    'rc': unmargined_final['replacement_cost'],
-                    'pfe': unmargined_final['potential_future_exposure'],
-                    'rwa': unmargined_final['risk_weighted_assets'],
-                    'capital': unmargined_final['capital_requirement']
-                }
-            },
-            'key_differences': {
-                'ead_difference': margined_final['exposure_at_default'] - unmargined_final['exposure_at_default'],
-                'rc_difference': margined_final['replacement_cost'] - unmargined_final['replacement_cost'],
-                'pfe_difference': margined_final['potential_future_exposure'] - unmargined_final['potential_future_exposure'],
-                'capital_difference': margined_final['capital_requirement'] - unmargined_final['capital_requirement']
-            },
-            'selection_rationale': {
-                'selected_scenario': selected_scenario,
-                'reason': f"{selected_scenario} scenario selected as it yields lower EAD",
-                'capital_efficiency': f"Saves ${abs(margined_final['capital_requirement'] - unmargined_final['capital_requirement']):,.0f} in capital requirement"
-            }
-        }
-    
-    # ==============================================================================
-    # SUPPORTING CALCULATION METHODS (simplified versions)
-    # ==============================================================================
-    
-    def _step1_netting_set_data(self, netting_set: NettingSet) -> Dict:
-        return {
+        # Step 1: Netting Set Data
+        total_notional = sum(abs(trade.notional) for trade in netting_set.trades)
+        self.shared_steps[1] = {
             'step': 1,
             'title': 'Netting Set Data',
-            'result': f"Netting Set ID: {netting_set.netting_set_id}, Trades: {len(netting_set.trades)}"
+            'netting_set_id': netting_set.netting_set_id,
+            'counterparty': netting_set.counterparty,
+            'trade_count': len(netting_set.trades),
+            'total_notional': total_notional
         }
-    
-    def _step2_asset_classification(self, trades: List[Trade]) -> Dict:
-        return {
+        
+        # Step 2: Asset Classification
+        self.shared_steps[2] = {
             'step': 2,
             'title': 'Asset Class Classification',
-            'result': f"Classified {len(trades)} trades"
+            'asset_classes': [trade.asset_class.value for trade in netting_set.trades]
         }
-    
-    def _step3_hedging_set(self, trades: List[Trade]) -> Dict:
+        
+        # Step 3: Hedging Set
         hedging_sets = {}
-        for trade in trades:
+        for trade in netting_set.trades:
             key = f"{trade.asset_class.value}_{trade.currency}"
             if key not in hedging_sets:
                 hedging_sets[key] = []
             hedging_sets[key].append(trade.trade_id)
-        
-        return {
+        self.shared_steps[3] = {
             'step': 3,
             'title': 'Hedging Set Determination',
-            'result': f"Created {len(hedging_sets)} hedging sets"
+            'hedging_sets': hedging_sets
         }
-    
-    def _step4_time_parameters(self, trades: List[Trade]) -> Dict:
-        return {
+        
+        # Step 4: Time Parameters
+        time_params = []
+        for trade in netting_set.trades:
+            time_params.append({
+                'trade_id': trade.trade_id,
+                'remaining_maturity': trade.time_to_maturity()
+            })
+        self.shared_steps[4] = {
             'step': 4,
             'title': 'Time Parameters',
-            'result': f"Calculated time parameters for {len(trades)} trades"
+            'time_params': time_params
         }
-    
-    def _step5_adjusted_notional(self, trades: List[Trade]) -> Dict:
-        return {
-            'step': 5,
-            'title': 'Adjusted Notional',
-            'result': f"Calculated adjusted notionals for {len(trades)} trades"
-        }
-    
-    def _step6_maturity_factor_enhanced(self, trades: List[Trade]) -> Dict:
-        return {
-            'step': 6,
-            'title': 'Maturity Factor',
-            'result': f"Calculated maturity factors for {len(trades)} trades"
-        }
-    
-    def _step7_supervisory_delta(self, trades: List[Trade]) -> Dict:
-        return {
-            'step': 7,
-            'title': 'Supervisory Delta',
-            'result': f"Calculated supervisory deltas for {len(trades)} trades"
-        }
-    
-    def _step8_supervisory_factor_enhanced(self, trades: List[Trade]) -> Dict:
-        return {
-            'step': 8,
-            'title': 'Supervisory Factor',
-            'result': f"Applied supervisory factors for {len(trades)} trades"
-        }
-    
-    def _step9_adjusted_derivatives_contract_amount_enhanced(self, trades: List[Trade]) -> Dict:
-        adjusted_amounts = []
-        for trade in trades:
+        
+        # Step 5: Adjusted Notional (SAME FOR BOTH SCENARIOS)
+        adjusted_notionals = []
+        for trade in netting_set.trades:
+            # Adjusted notional calculation - same for margined/unmargined
             adjusted_notional = abs(trade.notional)
-            supervisory_delta = trade.delta if trade.trade_type in [TradeType.OPTION, TradeType.SWAPTION] else (1.0 if trade.notional > 0 else -1.0)
-            remaining_maturity = trade.time_to_maturity()
-            mf = math.sqrt(min(remaining_maturity, 1.0))
-            sf = self._get_supervisory_factor(trade) / 10000
-            
-            adjusted_amount = adjusted_notional * supervisory_delta * mf * sf
-            
-            adjusted_amounts.append({
+            adjusted_notionals.append({
                 'trade_id': trade.trade_id,
-                'adjusted_derivatives_contract_amount': adjusted_amount
+                'original_notional': trade.notional,
+                'adjusted_notional': adjusted_notional
             })
         
-        return {
-            'step': 9,
-            'title': 'Adjusted Derivatives Contract Amount',
-            'data': adjusted_amounts,
-            'result': f"Calculated adjusted amounts for {len(trades)} trades"
+        self.shared_steps[5] = {
+            'step': 5,
+            'title': 'Adjusted Notional',
+            'adjusted_notionals': adjusted_notionals,
+            'total_adjusted_notional': sum(an['adjusted_notional'] for an in adjusted_notionals)
         }
-    
-    def _step10_supervisory_correlation(self, trades: List[Trade]) -> Dict:
-        return {
-            'step': 10,
-            'title': 'Supervisory Correlation',
-            'result': f"Applied correlations for asset classes"
-        }
-    
-    def _step11_hedging_set_addon(self, trades: List[Trade]) -> Dict:
-        hedging_sets = {}
-        for trade in trades:
-            hedging_set_key = f"{trade.asset_class.value}_{trade.currency}"
-            if hedging_set_key not in hedging_sets:
-                hedging_sets[hedging_set_key] = []
-            
-            adjusted_notional = abs(trade.notional)
-            supervisory_delta = trade.delta if trade.trade_type in [TradeType.OPTION, TradeType.SWAPTION] else (1.0 if trade.notional > 0 else -1.0)
+        
+        # Step 6: Maturity Factor (SAME FOR BOTH SCENARIOS)
+        maturity_factors = []
+        for trade in netting_set.trades:
             remaining_maturity = trade.time_to_maturity()
             mf = math.sqrt(min(remaining_maturity, 1.0))
+            maturity_factors.append({
+                'trade_id': trade.trade_id,
+                'remaining_maturity': remaining_maturity,
+                'maturity_factor': mf
+            })
+        
+        self.shared_steps[6] = {
+            'step': 6,
+            'title': 'Maturity Factor',
+            'maturity_factors': maturity_factors
+        }
+        
+        # Step 7: Supervisory Delta
+        supervisory_deltas = []
+        for trade in netting_set.trades:
+            if trade.trade_type in [TradeType.OPTION, TradeType.SWAPTION]:
+                supervisory_delta = trade.delta
+            else:
+                supervisory_delta = 1.0 if trade.notional > 0 else -1.0
+            supervisory_deltas.append({
+                'trade_id': trade.trade_id,
+                'supervisory_delta': supervisory_delta
+            })
+        
+        self.shared_steps[7] = {
+            'step': 7,
+            'title': 'Supervisory Delta',
+            'supervisory_deltas': supervisory_deltas
+        }
+        
+        # Step 8: Supervisory Factor
+        supervisory_factors = []
+        for trade in netting_set.trades:
+            sf_bps = self._get_supervisory_factor(trade)
+            sf_decimal = sf_bps / 10000
+            supervisory_factors.append({
+                'trade_id': trade.trade_id,
+                'asset_class': trade.asset_class.value,
+                'currency': trade.currency,
+                'supervisory_factor_bp': sf_bps,
+                'supervisory_factor_decimal': sf_decimal
+            })
+        
+        self.shared_steps[8] = {
+            'step': 8,
+            'title': 'Supervisory Factor',
+            'supervisory_factors': supervisory_factors
+        }
+        
+        # Step 9: Adjusted Derivatives Contract Amount (SAME FOR BOTH SCENARIOS)
+        adjusted_amounts = []
+        for i, trade in enumerate(netting_set.trades):
+            adjusted_notional = self.shared_steps[5]['adjusted_notionals'][i]['adjusted_notional']
+            supervisory_delta = self.shared_steps[7]['supervisory_deltas'][i]['supervisory_delta']
+            mf = self.shared_steps[6]['maturity_factors'][i]['maturity_factor']
+            sf = self.shared_steps[8]['supervisory_factors'][i]['supervisory_factor_decimal']
             
-            effective_notional = adjusted_notional * supervisory_delta * mf
-            hedging_sets[hedging_set_key].append(effective_notional)
-
+            adjusted_amount = adjusted_notional * supervisory_delta * mf * sf
+            adjusted_amounts.append({
+                'trade_id': trade.trade_id,
+                'adjusted_amount': adjusted_amount
+            })
+        
+        self.shared_steps[9] = {
+            'step': 9,
+            'title': 'Adjusted Derivatives Contract Amount',
+            'adjusted_amounts': adjusted_amounts
+        }
+        
+        # Step 10: Supervisory Correlation
+        correlations = []
+        asset_classes = set(trade.asset_class for trade in netting_set.trades)
+        for asset_class in asset_classes:
+            correlation = self.supervisory_correlations.get(asset_class, 0.5)
+            correlations.append({
+                'asset_class': asset_class.value,
+                'correlation': correlation
+            })
+        
+        self.shared_steps[10] = {
+            'step': 10,
+            'title': 'Supervisory Correlation',
+            'correlations': correlations
+        }
+        
+        # Step 11: Hedging Set AddOn (SAME FOR BOTH SCENARIOS)
         hedging_set_addons = []
-        for hedging_set_key, effective_notionals in hedging_sets.items():
-            rep_trade = next(t for t in trades if f"{t.asset_class.value}_{t.currency}" == hedging_set_key)
+        for hedging_set_key, trade_ids in hedging_sets.items():
+            effective_notionals = []
+            for trade_id in trade_ids:
+                trade = next(t for t in netting_set.trades if t.trade_id == trade_id)
+                trade_idx = next(i for i, t in enumerate(netting_set.trades) if t.trade_id == trade_id)
+                
+                adjusted_notional = self.shared_steps[5]['adjusted_notionals'][trade_idx]['adjusted_notional']
+                supervisory_delta = self.shared_steps[7]['supervisory_deltas'][trade_idx]['supervisory_delta']
+                mf = self.shared_steps[6]['maturity_factors'][trade_idx]['maturity_factor']
+                
+                effective_notional = adjusted_notional * supervisory_delta * mf
+                effective_notionals.append(effective_notional)
+            
+            # Get supervisory factor for this hedging set
+            rep_trade = next(t for t in netting_set.trades if t.trade_id in trade_ids)
             sf = self._get_supervisory_factor(rep_trade) / 10000
-
-            sum_effective_notionals = sum(effective_notionals)
-            hedging_set_addon = abs(sum_effective_notionals) * sf
-
+            
+            sum_effective = sum(effective_notionals)
+            hedging_set_addon = abs(sum_effective) * sf
+            
             hedging_set_addons.append({
                 'hedging_set': hedging_set_key,
                 'hedging_set_addon': hedging_set_addon
             })
-
-        return {
+        
+        self.shared_steps[11] = {
             'step': 11,
             'title': 'Hedging Set AddOn',
-            'data': hedging_set_addons,
-            'result': f"Calculated add-ons for {len(hedging_sets)} hedging sets"
+            'hedging_set_addons': hedging_set_addons
         }
-
-    def _step12_asset_class_addon(self, trades: List[Trade]) -> Dict:
-        step11_result = self._step11_hedging_set_addon(trades)
         
+        # Step 12: Asset Class AddOn (SAME FOR BOTH SCENARIOS)
         asset_class_addons_map = {}
-        for hedging_set_data in step11_result['data']:
-            asset_class = hedging_set_data['hedging_set'].split('_')[0]
+        for hsa in hedging_set_addons:
+            asset_class = hsa['hedging_set'].split('_')[0]
             if asset_class not in asset_class_addons_map:
                 asset_class_addons_map[asset_class] = []
-            asset_class_addons_map[asset_class].append(hedging_set_data['hedging_set_addon'])
+            asset_class_addons_map[asset_class].append(hsa['hedging_set_addon'])
         
         asset_class_results = []
-        for asset_class_str, hedging_set_addons_list in asset_class_addons_map.items():
+        for asset_class_str, addon_list in asset_class_addons_map.items():
             asset_class_enum = next((ac for ac in AssetClass if ac.value == asset_class_str), None)
             rho = self.supervisory_correlations.get(asset_class_enum, 0.5)
             
-            sum_addons = sum(hedging_set_addons_list)
-            sum_sq_addons = sum(a**2 for a in hedging_set_addons_list)
+            sum_addons = sum(addon_list)
+            sum_sq_addons = sum(a**2 for a in addon_list)
             
             term1_sq = (rho * sum_addons)**2
             term2 = (1 - rho**2) * sum_sq_addons
@@ -752,60 +407,157 @@ class EnhancedSACCREngine:
                 'asset_class_addon': asset_class_addon
             })
         
-        return {
+        self.shared_steps[12] = {
             'step': 12,
             'title': 'Asset Class AddOn',
-            'data': asset_class_results,
-            'result': f"Calculated asset class add-ons for {len(asset_class_results)} classes"
+            'asset_class_results': asset_class_results
         }
-    
-    def _step13_aggregate_addon_enhanced(self, trades: List[Trade]) -> Dict:
-        step12_result = self._step12_asset_class_addon(trades)
-        aggregate_addon = sum(ac_data['asset_class_addon'] for ac_data in step12_result['data'])
         
-        return {
+        # Step 13: Aggregate AddOn (SAME FOR BOTH SCENARIOS)
+        aggregate_addon = sum(ac['asset_class_addon'] for ac in asset_class_results)
+        
+        self.shared_steps[13] = {
             'step': 13,
             'title': 'Aggregate AddOn',
-            'data': {
-                'aggregate_addon': aggregate_addon
-            },
-            'result': f"Total Aggregate AddOn: ${aggregate_addon:,.0f}",
             'aggregate_addon': aggregate_addon
         }
+        
+        # Step 14: Sum of V, C (SAME FOR BOTH SCENARIOS - collateral treatment is same)
+        sum_v = sum(trade.mtm_value for trade in netting_set.trades)
+        
+        sum_c = 0
+        collateral_details = []
+        if collateral:
+            for coll in collateral:
+                haircut = self.collateral_haircuts.get(coll.collateral_type, 15.0) / 100
+                effective_value = coll.amount * (1 - haircut)
+                sum_c += effective_value
+                
+                collateral_details.append({
+                    'type': coll.collateral_type.value,
+                    'amount': coll.amount,
+                    'haircut_pct': haircut * 100,
+                    'effective_value': effective_value
+                })
+        
+        self.shared_steps[14] = {
+            'step': 14,
+            'title': 'Sum of V, C',
+            'sum_v': sum_v,
+            'sum_c': sum_c,
+            'net_exposure': sum_v - sum_c,
+            'collateral_details': collateral_details
+        }
+        
+        # Step 15: PFE Multiplier (SAME CALCULATION FOR BOTH - the difference is in Step 16)
+        net_exposure = sum_v - sum_c
+        if aggregate_addon > 0:
+            exponent = net_exposure / (2 * 0.95 * aggregate_addon)
+            multiplier = min(1.0, 0.05 + 0.95 * math.exp(exponent))
+        else:
+            multiplier = 1.0
+            
+        self.shared_steps[15] = {
+            'step': 15,
+            'title': 'PFE Multiplier',
+            'multiplier': multiplier,
+            'exponent': exponent if aggregate_addon > 0 else 0
+        }
+        
+        # Step 17: TH, MTA, NICA (SAME FOR BOTH SCENARIOS)
+        self.shared_steps[17] = {
+            'step': 17,
+            'title': 'TH, MTA, NICA',
+            'threshold': netting_set.threshold,
+            'mta': netting_set.mta,
+            'nica': netting_set.nica
+        }
+        
+        # Steps 19-24: Common for both scenarios
+        self.shared_steps[19] = {'step': 19, 'title': 'CEU Flag', 'ceu_flag': 1}
+        self.shared_steps[20] = {'step': 20, 'title': 'Alpha', 'alpha': BASEL_ALPHA}
+        self.shared_steps[22] = {'step': 22, 'title': 'Counterparty Info', 'counterparty_type': 'Corporate'}
+        self.shared_steps[23] = {'step': 23, 'title': 'Risk Weight', 'risk_weight': 1.0}
     
-    def _step19_ceu_flag(self, trades: List[Trade]) -> Dict:
-        overall_ceu = 1  # Default to non-centrally cleared
+    def _calculate_margined_scenario(self, netting_set: NettingSet, collateral: List[Collateral] = None) -> Dict:
+        """Calculate margined scenario (uses CSA terms and collateral)."""
+        
+        # Step 16: PFE (Margined) - Uses actual multiplier
+        multiplier = self.shared_steps[15]['multiplier']
+        aggregate_addon = self.shared_steps[13]['aggregate_addon']
+        pfe_margined = multiplier * aggregate_addon
+        
+        # Step 18: RC (Margined) - Uses CSA terms
+        sum_v = self.shared_steps[14]['sum_v']
+        sum_c = self.shared_steps[14]['sum_c']
+        threshold = self.shared_steps[17]['threshold']
+        mta = self.shared_steps[17]['mta']
+        nica = self.shared_steps[17]['nica']
+        
+        net_exposure = sum_v - sum_c
+        
+        if threshold > 0 or mta > 0:
+            # Margined formula
+            margin_floor = threshold + mta - nica
+            rc_margined = max(net_exposure, margin_floor, 0)
+        else:
+            # Unmargined formula
+            rc_margined = max(net_exposure, 0)
+        
+        # Step 21: EAD (Margined)
+        alpha = self.shared_steps[20]['alpha']
+        ead_margined = alpha * (rc_margined + pfe_margined)
+        
+        # Step 24: RWA (Margined)
+        risk_weight = self.shared_steps[23]['risk_weight']
+        rwa_margined = ead_margined * risk_weight
+        capital_margined = rwa_margined * BASEL_CAPITAL_RATIO
+        
         return {
-            'step': 19,
-            'title': 'CEU Flag',
-            'result': f"CEU Flag: {overall_ceu}",
-            'ceu_flag': overall_ceu
+            'scenario': 'Margined',
+            'pfe': pfe_margined,
+            'rc': rc_margined,
+            'final_ead': ead_margined,
+            'rwa': rwa_margined,
+            'final_capital': capital_margined,
+            'step_16': {'pfe': pfe_margined, 'multiplier_used': multiplier},
+            'step_18': {'rc': rc_margined, 'methodology': 'Margined with CSA terms'},
+            'step_21': {'ead': ead_margined},
+            'step_24': {'rwa': rwa_margined, 'capital': capital_margined}
         }
     
-    def _step20_alpha(self, ceu_flag: int) -> Dict:
-        alpha = BASEL_ALPHA
+    def _calculate_unmargined_scenario(self, netting_set: NettingSet, collateral: List[Collateral] = None) -> Dict:
+        """Calculate unmargined scenario (ignores CSA terms and collateral)."""
+        
+        # Step 16: PFE (Unmargined) - Uses multiplier = 1.0 (no netting benefit)
+        aggregate_addon = self.shared_steps[13]['aggregate_addon']
+        pfe_unmargined = 1.0 * aggregate_addon  # Full addon, no multiplier benefit
+        
+        # Step 18: RC (Unmargined) - Ignores CSA terms and collateral
+        sum_v = self.shared_steps[14]['sum_v']
+        # For unmargined, ignore collateral benefit (sum_c = 0)
+        rc_unmargined = max(sum_v - 0, 0)  # No collateral benefit, no CSA terms
+        
+        # Step 21: EAD (Unmargined)
+        alpha = self.shared_steps[20]['alpha']
+        ead_unmargined = alpha * (rc_unmargined + pfe_unmargined)
+        
+        # Step 24: RWA (Unmargined)
+        risk_weight = self.shared_steps[23]['risk_weight']
+        rwa_unmargined = ead_unmargined * risk_weight
+        capital_unmargined = rwa_unmargined * BASEL_CAPITAL_RATIO
+        
         return {
-            'step': 20,
-            'title': 'Alpha',
-            'result': f"Alpha: {alpha}",
-            'alpha': alpha
-        }
-    
-    def _step22_counterparty_info(self, counterparty: str) -> Dict:
-        return {
-            'step': 22,
-            'title': 'Counterparty Information',
-            'result': f"Counterparty: {counterparty}, Category: Corporate",
-            'counterparty_type': 'Corporate'
-        }
-    
-    def _step23_risk_weight(self, counterparty_type: str) -> Dict:
-        risk_weight = self.risk_weight_mapping.get(counterparty_type, 1.0)
-        return {
-            'step': 23,
-            'title': 'Standardized Risk Weight',
-            'result': f"Risk Weight: {risk_weight * 100:.0f}%",
-            'risk_weight': risk_weight
+            'scenario': 'Unmargined',
+            'pfe': pfe_unmargined,
+            'rc': rc_unmargined,
+            'final_ead': ead_unmargined,
+            'rwa': rwa_unmargined,
+            'final_capital': capital_unmargined,
+            'step_16': {'pfe': pfe_unmargined, 'multiplier_used': 1.0},
+            'step_18': {'rc': rc_unmargined, 'methodology': 'Unmargined (no CSA, no collateral)'},
+            'step_21': {'ead': ead_unmargined},
+            'step_24': {'rwa': rwa_unmargined, 'capital': capital_unmargined}
         }
     
     def _get_supervisory_factor(self, trade: Trade) -> float:
@@ -834,43 +586,47 @@ class EnhancedSACCREngine:
         elif trade.asset_class == AssetClass.COMMODITY:
             return self.supervisory_factors[AssetClass.COMMODITY]['energy']
         
-        return 100.0
+        return 50.0  # Default 50 bps for USD IR
 
 
 # ==============================================================================
-# EXAMPLE USAGE WITH REFERENCE DATA TO MATCH IMAGE RESULTS
+# CORRECTED REFERENCE EXAMPLE TO MATCH IMAGE
 # ==============================================================================
 
-def create_reference_example_to_match_image():
+def create_correct_reference_example():
     """
-    Create reference example that should match the EAD = 11,790,314 shown in the image.
+    Create reference example based on the image data.
+    Starting with 100M notional as shown in the input data.
     """
     from datetime import datetime, timedelta
     
-    # Create trades based on the image data
+    # Single trade with 100M notional as shown in the input section of images
     trades = [
         Trade(
             trade_id="2083047100",
             counterparty="Lowell Hotel Properties LLC",
             asset_class=AssetClass.INTEREST_RATE,
             trade_type=TradeType.SWAP,
-            notional=100_000_000,  # $100M notional
+            notional=100_000_000,  # $100M notional from image input
             currency="USD",
-            underlying="USD Interest Rate",
-            maturity_date=datetime(2025, 12, 31),  # Based on image
-            mtm_value=0,  # No MTM shown in image
-            delta=1.0
+            underlying="USD Interest Rate Swap",
+            maturity_date=datetime(2025, 12, 31),  # Approximately 1 year
+            mtm_value=0,  # From image Step 14, seems to show 0 initially
+            delta=1.0,
+            basis_flag=False,
+            volatility_flag=False,
+            ceu_flag=1
         )
     ]
     
-    # Create netting set with CSA terms from image
+    # Netting set with exact CSA terms from image
     netting_set = NettingSet(
         netting_set_id="212784060000098918701",
-        counterparty="Lowell Hotel Properties LLC",
+        counterparty="Lowell Hotel Properties LLC", 
         trades=trades,
-        threshold=15_000_000,    # $15M threshold from image
-        mta=1_000_000,          # $1M MTA from image  
-        nica=0                  # $0 NICA from image
+        threshold=15_000_000,   # TH = $15M from Step 17
+        mta=1_000_000,         # MTA = $1M from Step 17
+        nica=0                 # NICA = $0 from Step 17
     )
     
     # No collateral shown in image
@@ -879,53 +635,91 @@ def create_reference_example_to_match_image():
     return netting_set, collateral
 
 
-def test_dual_scenario_calculation():
-    """Test the dual scenario calculation to match image results."""
+def test_corrected_calculation():
+    """Test the corrected calculation logic."""
     
-    print("🔄 Testing Enhanced SA-CCR Engine with Dual Scenarios")
-    print("=" * 60)
+    print("Testing Corrected SA-CCR Engine")
+    print("=" * 50)
     
     # Create reference data
-    netting_set, collateral = create_reference_example_to_match_image()
+    netting_set, collateral = create_correct_reference_example()
     
-    # Initialize engine and calculate
-    engine = EnhancedSACCREngine()
+    print(f"""
+INPUT DATA:
+• Notional: ${netting_set.trades[0].notional:,.0f}
+• MTM Value: ${netting_set.trades[0].mtm_value:,.0f}
+• Threshold: ${netting_set.threshold:,.0f}
+• MTA: ${netting_set.mta:,.0f}
+• NICA: ${netting_set.nica:,.0f}
+    """)
+    
+    # Calculate using corrected engine
+    engine = CorrectedSACCREngine()
     results = engine.calculate_dual_scenario_saccr(netting_set, collateral)
     
     # Display results
-    print("\n📊 DUAL SCENARIO RESULTS")
-    print("-" * 40)
-    
     margined = results['scenarios']['margined']
     unmargined = results['scenarios']['unmargined']
     selected = results['selection']['selected_scenario']
     
     print(f"""
+SHARED CALCULATIONS:
+• Step 5 - Adjusted Notional: ${results['shared_calculation_steps'][5]['total_adjusted_notional']:,.0f}
+• Step 13 - Aggregate AddOn: ${results['shared_calculation_steps'][13]['aggregate_addon']:,.0f}
+• Step 15 - PFE Multiplier: {results['shared_calculation_steps'][15]['multiplier']:.6f}
+
 MARGINED SCENARIO:
-• EAD: ${margined['ead']:,.0f}
-• RC:  ${margined['rc']:,.0f}
-• PFE: ${margined['pfe']:,.0f}
-• RWA: ${margined['rwa']:,.0f}
-• Capital: ${margined['capital']:,.0f}
+• Step 16 - PFE: ${margined['pfe']:,.0f} (multiplier: {margined['step_16']['multiplier_used']:.6f})
+• Step 18 - RC: ${margined['rc']:,.0f} ({margined['step_18']['methodology']})
+• Step 21 - EAD: ${margined['final_ead']:,.0f}
+• Step 24 - Capital: ${margined['final_capital']:,.0f}
 
 UNMARGINED SCENARIO:
-• EAD: ${unmargined['ead']:,.0f}
-• RC:  ${unmargined['rc']:,.0f}
-• PFE: ${unmargined['pfe']:,.0f}
-• RWA: ${unmargined['rwa']:,.0f}
-• Capital: ${unmargined['capital']:,.0f}
+• Step 16 - PFE: ${unmargined['pfe']:,.0f} (multiplier: {unmargined['step_16']['multiplier_used']:.6f})
+• Step 18 - RC: ${unmargined['rc']:,.0f} ({unmargined['step_18']['methodology']})
+• Step 21 - EAD: ${unmargined['final_ead']:,.0f}
+• Step 24 - Capital: ${unmargined['final_capital']:,.0f}
 
-SELECTED: {selected} Scenario
-FINAL EAD: ${results['final_results']['exposure_at_default']:,.0f}
+FINAL SELECTION:
+• Selected: {selected} Scenario
+• Final EAD: ${results['final_results']['exposure_at_default']:,.0f}
+• Capital Savings: ${results['selection']['capital_savings']:,.0f}
 
-TARGET EAD (from image): $11,790,314
-ACTUAL EAD: ${results['final_results']['exposure_at_default']:,.0f}
-VARIANCE: {((results['final_results']['exposure_at_default'] - 11_790_314) / 11_790_314 * 100):+.2f}%
+COMPARISON WITH IMAGE TARGET:
+• Target EAD (from image): $11,790,314
+• Actual EAD: ${results['final_results']['exposure_at_default']:,.0f}
+• Variance: {((results['final_results']['exposure_at_default'] - 11_790_314) / 11_790_314 * 100):+.2f}%
+
+KEY INTERMEDIATE CHECKS:
+• Supervisory Factor (USD IR): 50 bps (0.50%)
+• Expected Adjusted Notional: $100,000,000
+• Expected Aggregate AddOn: Should lead to target values
+    """)
+    
+    # Additional diagnostic information
+    print("\nDETAILED STEP ANALYSIS:")
+    sf_check = engine._get_supervisory_factor(netting_set.trades[0])
+    maturity_check = netting_set.trades[0].time_to_maturity()
+    
+    print(f"""
+Trade Analysis:
+• Asset Class: {netting_set.trades[0].asset_class.value}
+• Currency: {netting_set.trades[0].currency}
+• Maturity: {maturity_check:.2f} years
+• Supervisory Factor: {sf_check:.1f} bps
+• Maturity Factor: {math.sqrt(min(maturity_check, 1.0)):.6f}
+
+Step 9 Calculation Check:
+• Adjusted Notional: ${results['shared_calculation_steps'][5]['adjusted_notionals'][0]['adjusted_notional']:,.0f}
+• Supervisory Delta: {results['shared_calculation_steps'][7]['supervisory_deltas'][0]['supervisory_delta']}
+• Maturity Factor: {results['shared_calculation_steps'][6]['maturity_factors'][0]['maturity_factor']:.6f}
+• Supervisory Factor: {results['shared_calculation_steps'][8]['supervisory_factors'][0]['supervisory_factor_decimal']:.6f}
+• Adjusted Amount: ${results['shared_calculation_steps'][9]['adjusted_amounts'][0]['adjusted_amount']:,.0f}
     """)
     
     return results
 
 
-# Run test if this module is executed directly
+# Test if executed directly
 if __name__ == "__main__":
-    test_results = test_dual_scenario_calculation()
+    test_results = test_corrected_calculation()
