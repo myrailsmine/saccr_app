@@ -66,7 +66,7 @@ def _render_chat_interface():
 
 
 def _process_ai_question(user_question: str):
-    """Process user question and generate AI response."""
+    """Process user question using Enhanced SA-CCR Assistant."""
     # Add user question to history
     st.session_state.saccr_chat_history.append({
         'type': 'user',
@@ -77,13 +77,20 @@ def _process_ai_question(user_question: str):
     # Get portfolio context if available
     portfolio_context = _get_portfolio_context()
     
-    # Generate AI response
-    with st.spinner("AI is analyzing your SA-CCR question..."):
+    # Generate AI response using Enhanced Assistant
+    with st.spinner("🤖 Enhanced SA-CCR AI is analyzing your question..."):
         try:
-            if hasattr(st.session_state, 'llm_client') and st.session_state.llm_client.is_connected():
-                ai_response = _generate_llm_response(user_question, portfolio_context)
-            else:
-                ai_response = generate_template_response(user_question, portfolio_context)
+            # Initialize enhanced assistant if not exists
+            if 'enhanced_assistant' not in st.session_state:
+                st.session_state.enhanced_assistant = EnhancedSACCRAssistant()
+            
+            assistant = st.session_state.enhanced_assistant
+            
+            # Get conversational response with regulatory expertise
+            response_data = assistant.get_conversational_response(user_question, portfolio_context)
+            
+            # Format response for display
+            ai_response = _format_enhanced_response(response_data)
             
             # Add AI response to history
             st.session_state.saccr_chat_history.append({
