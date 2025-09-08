@@ -1,6 +1,6 @@
 
 import streamlit as st
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
 
