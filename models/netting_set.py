@@ -1,7 +1,7 @@
 """Netting set data model with aggregation methods."""
 
 from dataclasses import dataclass
-from typing import List, Set
+from typing import List, Set, Dict
 from models.trade import Trade
 from models.enums import AssetClass
 
