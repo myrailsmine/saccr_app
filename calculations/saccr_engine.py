@@ -130,7 +130,7 @@ BASEL_CAPITAL_RATIO = 0.08
 # ENHANCED SA-CCR ENGINE WITH DUAL SCENARIOS
 # ==============================================================================
 
-class UnifiedSACCREngine:
+class EnhancedSACCREngine:
     """
     Enhanced SA-CCR engine that computes both margined and unmargined scenarios
     and selects the minimum EAD as per Basel regulatory requirements.
