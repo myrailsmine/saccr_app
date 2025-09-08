@@ -11,18 +11,36 @@ from ai.response_generators import generate_template_response
 
 
 def render_ai_assistant_page():
-    """Render the AI assistant page."""
-    st.markdown("## AI SA-CCR Expert Assistant")
-    st.markdown("*Ask detailed questions about SA-CCR calculations, Basel regulations, and optimization strategies*")
+    """Render the enhanced AI assistant page."""
+    st.markdown("## 🤖 Enhanced SA-CCR AI Assistant")
+    st.markdown("""
+    *Expert guidance with complete regulatory knowledge of **12 CFR 217.132** and the **24-step calculation process***
     
-    # Quick question templates
-    _render_sample_questions()
+    **New Capabilities:**
+    - 📊 **EAD Estimation** from natural language trade descriptions
+    - 📋 **Step-by-step guidance** through the complete 24-step process
+    - 🎯 **Conversational support** with human-in-the-loop capabilities
+    - 📖 **Regulatory citations** with specific CFR references
+    """)
     
-    # Chat interface
-    _render_chat_interface()
+    # Tabs for different modes
+    tab1, tab2, tab3 = st.tabs(["💬 Chat Assistant", "📈 EAD Estimator", "📋 24-Step Guide"])
     
-    # Display chat history
-    _render_chat_history()
+    with tab1:
+        # Quick question templates
+        _render_sample_questions()
+        
+        # Chat interface
+        _render_chat_interface()
+        
+        # Display chat history
+        _render_chat_history()
+    
+    with tab2:
+        _render_ead_estimator()
+    
+    with tab3:
+        _render_step_guide()
 
 
 def _render_sample_questions():
