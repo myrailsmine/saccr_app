@@ -202,7 +202,7 @@ US_MPOR_VALUES = {
 # COMPLETE US SA-CCR ENGINE CLASS
 # ==============================================================================
 
-class CompleteSACCREngine:
+class UnifiedSACCREngine:
     """
     Complete US SA-CCR engine implementing ALL aspects of 12 CFR 217.132 Table 3.
     """
