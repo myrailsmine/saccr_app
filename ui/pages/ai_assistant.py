@@ -3,11 +3,9 @@
 
 import streamlit as st
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict
 
-from ai.llm_client import LLMClient
 from ai.enhanced_saccr_assistant import EnhancedSACCRAssistant
-from ai.response_generators import generate_template_response
 
 
 def render_ai_assistant_page():
@@ -178,17 +176,17 @@ def _format_enhanced_response(response_data: Dict) -> str:
     # Add regulatory guidance if available
     if 'regulatory_guidance' in response_data and response_data['regulatory_guidance']:
         guidance = response_data['regulatory_guidance']
-        response_text += f"\n\n**📋 Regulatory References:**\n" + "\n".join([f"• {g}" for g in guidance])
+        response_text += "\n\n**📋 Regulatory References:**\n" + "\n".join([f"• {g}" for g in guidance])
     
     # Add follow-up questions if available
     if 'follow_up_questions' in response_data and response_data['follow_up_questions']:
         questions = response_data['follow_up_questions']
-        response_text += f"\n\n**❓ Follow-up Questions:**\n" + "\n".join([f"• {q}" for q in questions])
+        response_text += "\n\n**❓ Follow-up Questions:**\n" + "\n".join([f"• {q}" for q in questions])
     
     # Add suggested actions if available
     if 'suggested_actions' in response_data and response_data['suggested_actions']:
         actions = response_data['suggested_actions']
-        response_text += f"\n\n**🎯 Suggested Next Steps:**\n" + "\n".join([f"• {a}" for a in actions])
+        response_text += "\n\n**🎯 Suggested Next Steps:**\n" + "\n".join([f"• {a}" for a in actions])
     
     return response_text
 
