@@ -18,8 +18,8 @@ from utils.data_export import export_calculation_results
 
 def render_calculator_page():
     """Render the main SA-CCR calculator page."""
-    st.markdown("## SA-CCR Calculator")
-    st.markdown("*Following the complete 24-step Basel regulatory framework*")
+    st.markdown("## Complete US SA-CCR Calculator")
+    st.markdown("*Following the complete 24-step Basel regulatory framework per 12 CFR 217.132*")
     
     # Step 1: Netting Set Configuration
     with st.expander("Step 1: Netting Set Configuration", expanded=True):
@@ -33,8 +33,14 @@ def render_calculator_page():
     collateral = _render_collateral_input()
     
     # Validation and Calculation
-    if st.button("Calculate Complete SA-CCR", type="primary"):
-        _execute_calculation(netting_set_config, trades, collateral)
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Calculate Complete SA-CCR", type="primary"):
+            _execute_calculation(netting_set_config, trades, collateral)
+    
+    with col2:
+        if st.button("Calculate with Scenario Analysis"):
+            _execute_dual_scenario_calculation(netting_set_config, trades, collateral)
 
 
 def _render_netting_set_config():
@@ -76,12 +82,21 @@ def _render_netting_set_config():
             help="Net Independent Collateral Amount"
         )
     
+    # Add CEU flag for complete regulatory compliance
+    ceu_flag = st.selectbox(
+        "CEU Flag",
+        options=[1, 0],
+        index=0,
+        help="Central Bank Exposure flag: 1 for central bank exposures, 0 for others"
+    )
+    
     return {
         'netting_set_id': netting_set_id,
         'counterparty': counterparty,
         'threshold': threshold,
         'mta': mta,
-        'nica': nica
+        'nica': nica,
+        'ceu_flag': ceu_flag
     }
 
 
@@ -135,6 +150,15 @@ def _render_trade_form():
         mtm_value = st.number_input("MTM Value ($)", value=0.0, step=10000.0)
         delta = st.number_input("Delta (for options)", min_value=-1.0, max_value=1.0, value=1.0, step=0.1)
     
+    # Additional regulatory parameters
+    st.markdown("**Additional Parameters (for complete regulatory compliance):**")
+    col4, col5 = st.columns(2)
+    with col4:
+        basis_flag = st.checkbox("Basis Flag", help="Set to true for basis trades")
+        volatility_flag = st.checkbox("Volatility Flag", help="Set to true for volatility trades")
+    with col5:
+        ceu_flag = st.selectbox("CEU Flag", options=[1, 0], index=1, help="Central Bank Exposure flag")
+    
     return {
         'trade_id': trade_id,
         'asset_class': asset_class,
@@ -144,7 +168,10 @@ def _render_trade_form():
         'underlying': underlying,
         'maturity_years': maturity_years,
         'mtm_value': mtm_value,
-        'delta': delta
+        'delta': delta,
+        'basis_flag': basis_flag,
+        'volatility_flag': volatility_flag,
+        'ceu_flag': ceu_flag
     }
 
 
@@ -166,7 +193,10 @@ def _create_trade_from_form(trade_form):
         underlying=trade_form['underlying'],
         maturity_date=datetime.now() + timedelta(days=int(trade_form['maturity_years'] * 365)),
         mtm_value=trade_form['mtm_value'],
-        delta=trade_form['delta']
+        delta=trade_form['delta'],
+        basis_flag=trade_form.get('basis_flag', False),
+        volatility_flag=trade_form.get('volatility_flag', False),
+        ceu_flag=trade_form.get('ceu_flag', 1)
     )
 
 
@@ -184,7 +214,8 @@ def _display_current_trades():
             'Notional ($M)': f"{trade.notional/1_000_000:.1f}",
             'Currency': trade.currency,
             'MTM ($K)': f"{trade.mtm_value/1000:.0f}",
-            'Maturity (Y)': f"{trade.time_to_maturity():.1f}"
+            'Maturity (Y)': f"{trade.time_to_maturity():.1f}",
+            'CEU': trade.ceu_flag
         })
     
     df = pd.DataFrame(trades_data)
@@ -230,13 +261,79 @@ def _render_collateral_input():
 
 
 def _execute_calculation(netting_set_config, trades, collateral):
-    """Execute SA-CCR calculation."""
+    """Execute standard SA-CCR calculation using the original method."""
     # Validate inputs
     if not netting_set_config['netting_set_id'] or not netting_set_config['counterparty'] or not trades:
         st.error("Please provide Netting Set ID, Counterparty, and at least one trade")
         return
     
     # Create netting set
+    netting_set = _create_netting_set(netting_set_config, trades)
+    
+    # Check if the new method exists, otherwise fall back to the old method
+    if hasattr(st.session_state.saccr_engine, 'calculate_comprehensive_saccr'):
+        # Use the existing comprehensive method
+        with st.spinner("Performing comprehensive SA-CCR calculation..."):
+            try:
+                result = st.session_state.saccr_engine.calculate_comprehensive_saccr(netting_set, collateral)
+                st.markdown("### SA-CCR Calculation Results")
+                display_calculation_results(result)
+            except Exception as e:
+                st.error(f"Calculation error: {str(e)}")
+    else:
+        st.error("The SA-CCR engine does not have the expected calculation method. Please check the engine implementation.")
+
+
+def _execute_dual_scenario_calculation(netting_set_config, trades, collateral):
+    """Execute dual scenario SA-CCR calculation using the new complete US method."""
+    # Validate inputs
+    if not netting_set_config['netting_set_id'] or not netting_set_config['counterparty'] or not trades:
+        st.error("Please provide Netting Set ID, Counterparty, and at least one trade")
+        return
+    
+    # Create netting set
+    netting_set = _create_netting_set(netting_set_config, trades)
+    
+    # Check if the dual scenario method exists
+    if hasattr(st.session_state.saccr_engine, 'calculate_dual_scenario_saccr'):
+        # Perform calculation using the new dual scenario method
+        with st.spinner("Performing complete US SA-CCR dual scenario calculation per 12 CFR 217.132..."):
+            try:
+                result = st.session_state.saccr_engine.calculate_dual_scenario_saccr(netting_set, collateral)
+                
+                st.markdown("### Complete US SA-CCR Results (12 CFR 217.132)")
+                
+                # Show scenario comparison first
+                _display_scenario_comparison(result)
+                
+                # Show regulatory compliance information
+                _display_regulatory_compliance(result)
+                
+                # Display full detailed results
+                st.markdown("### Detailed Calculation Results")
+                display_calculation_results(result)
+                
+            except Exception as e:
+                st.error(f"Dual scenario calculation error: {str(e)}")
+                st.markdown("**Available methods:**")
+                available_methods = [method for method in dir(st.session_state.saccr_engine) if not method.startswith('_')]
+                st.write(available_methods)
+    else:
+        st.warning("Dual scenario calculation method not available. Using standard calculation instead.")
+        _execute_calculation(netting_set_config, trades, collateral)
+
+
+def _create_netting_set(netting_set_config, trades):
+    """Create NettingSet object from configuration and trades."""
+    # Update trade counterparty and CEU flag
+    for trade in trades:
+        trade.counterparty = netting_set_config['counterparty']
+        if hasattr(trade, 'ceu_flag'):
+            # Use trade-specific CEU flag if available, otherwise use netting set default
+            pass
+        else:
+            trade.ceu_flag = netting_set_config.get('ceu_flag', 1)
+    
     netting_set = NettingSet(
         netting_set_id=netting_set_config['netting_set_id'],
         counterparty=netting_set_config['counterparty'],
@@ -246,29 +343,86 @@ def _execute_calculation(netting_set_config, trades, collateral):
         nica=netting_set_config['nica']
     )
     
-    # Update trade counterparty
-    for trade in netting_set.trades:
-        trade.counterparty = netting_set.counterparty
+    return netting_set
+
+
+def _display_scenario_comparison(result):
+    """Display comparison between margined and unmargined scenarios."""
+    st.markdown("### Scenario Comparison")
     
-    # Validate completeness
-    validation = st.session_state.saccr_engine.validate_input_completeness(netting_set, collateral)
+    # Key metrics comparison
+    col1, col2, col3 = st.columns(3)
     
-    if not validation['is_complete']:
-        st.error("Missing required information:")
-        for field in validation['missing_fields']:
-            st.write(f"   • {field}")
-        st.markdown("### Please provide missing information and try again.")
-        return
+    margined = result['scenarios']['margined']
+    unmargined = result['scenarios']['unmargined']
     
-    if validation['warnings']:
-        st.warning("Warnings (calculation will proceed with defaults):")
-        for warning in validation['warnings']:
-            st.write(f"   • {warning}")
+    with col1:
+        st.metric(
+            "Margined Scenario",
+            f"${margined['final_ead']:,.0f}",
+            help="EAD calculated under margined scenario with CSA terms"
+        )
+        st.write(f"• RC: ${margined['rc']:,.0f}")
+        st.write(f"• PFE: ${margined['pfe']:,.0f}")
+        st.write(f"• Capital: ${margined['final_capital']:,.0f}")
     
-    # Perform calculation
-    with st.spinner("Performing complete 24-step SA-CCR calculation..."):
-        try:
-            result = st.session_state.saccr_engine.calculate_comprehensive_saccr(netting_set, collateral)
-            display_calculation_results(result)
-        except Exception as e:
-            st.error(f"Calculation error: {str(e)}")
+    with col2:
+        st.metric(
+            "Unmargined Scenario", 
+            f"${unmargined['final_ead']:,.0f}",
+            help="EAD calculated under unmargined scenario"
+        )
+        st.write(f"• RC: ${unmargined['rc']:,.0f}")
+        st.write(f"• PFE: ${unmargined['pfe']:,.0f}")
+        st.write(f"• Capital: ${unmargined['final_capital']:,.0f}")
+    
+    with col3:
+        selected = result['selection']['selected_scenario']
+        st.metric(
+            f"Selected: {selected}",
+            f"${result['final_results']['exposure_at_default']:,.0f}",
+            help=f"Final EAD using {selected} scenario per minimum rule"
+        )
+        st.write(f"• EAD Difference: ${result['selection']['ead_difference']:,.0f}")
+        st.write(f"• Capital Savings: ${result['selection']['capital_savings']:,.0f}")
+
+
+def _display_regulatory_compliance(result):
+    """Display regulatory compliance information."""
+    st.markdown("### Regulatory Compliance Details")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(f"""
+        **Regulatory Framework:**
+        - **Regulation**: {result['regulatory_reference']}
+        - **Table 3 Implementation**: {result['table_3_implementation']}
+        - **Selected Scenario**: {result['selection']['selected_scenario']}
+        
+        **Selection Rationale:**
+        {result['selection']['selection_rationale']}
+        """)
+    
+    with col2:
+        shared_steps = result['shared_calculation_steps']
+        st.markdown(f"""
+        **Key Regulatory Parameters:**
+        - **Supervisory Factor**: {shared_steps[8]['supervisory_factors'][0]['supervisory_factor_percent']:.2f}%
+        - **Alpha**: {shared_steps[20]['alpha']}
+        - **CEU Flag**: {shared_steps[19]['ceu_flag']}
+        - **Risk Weight**: {shared_steps[23]['risk_weight']:.0%}
+        
+        **Final Capital Requirements:**
+        - **RWA**: ${result['final_results']['risk_weighted_assets']:,.0f}
+        - **Capital**: ${result['final_results']['capital_requirement']:,.0f}
+        """)
+    
+    # Display regulatory formulas used
+    with st.expander("Regulatory Formulas Used", expanded=False):
+        selected_scenario = result['selection']['selected_scenario'].lower()
+        formulas = result['scenarios'][selected_scenario]['regulatory_formulas']
+        
+        st.markdown("**Formulas from Selected Scenario:**")
+        for formula_name, formula in formulas.items():
+            st.write(f"• **{formula_name.replace('_', ' ').title()}**: {formula}")
