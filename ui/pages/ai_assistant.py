@@ -153,6 +153,28 @@ def _generate_llm_response(user_question: str, portfolio_context: Dict) -> str:
     return response if response else "AI response generation failed."
 
 
+def _format_enhanced_response(response_data: Dict) -> str:
+    """Format enhanced assistant response for display."""
+    response_text = response_data.get('response_text', 'No response generated')
+    
+    # Add regulatory guidance if available
+    if 'regulatory_guidance' in response_data and response_data['regulatory_guidance']:
+        guidance = response_data['regulatory_guidance']
+        response_text += f"\n\n**📋 Regulatory References:**\n" + "\n".join([f"• {g}" for g in guidance])
+    
+    # Add follow-up questions if available
+    if 'follow_up_questions' in response_data and response_data['follow_up_questions']:
+        questions = response_data['follow_up_questions']
+        response_text += f"\n\n**❓ Follow-up Questions:**\n" + "\n".join([f"• {q}" for q in questions])
+    
+    # Add suggested actions if available
+    if 'suggested_actions' in response_data and response_data['suggested_actions']:
+        actions = response_data['suggested_actions']
+        response_text += f"\n\n**🎯 Suggested Next Steps:**\n" + "\n".join([f"• {a}" for a in actions])
+    
+    return response_text
+
+
 def _render_chat_history():
     """Render chat history."""
     if st.session_state.saccr_chat_history:
@@ -169,7 +191,7 @@ def _render_chat_history():
             else:
                 st.markdown(f"""
                 <div class="ai-response">
-                    <strong>SA-CCR Expert:</strong><br>
+                    <strong>🤖 Enhanced SA-CCR Expert:</strong><br>
                     {chat['content']}
                     <br><small style="color: rgba(255,255,255,0.7);">{chat['timestamp'].strftime('%H:%M:%S')}</small>
                 </div>
