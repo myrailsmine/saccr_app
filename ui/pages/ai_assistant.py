@@ -5,6 +5,8 @@ import streamlit as st
 from datetime import datetime
 from typing import Dict, List
 
+from ai.llm_client import LLMClient
+from ai.enhanced_saccr_assistant import EnhancedSACCRAssistant
 from ai.response_generators import generate_template_response
 
 
