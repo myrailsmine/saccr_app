@@ -267,6 +267,9 @@ class UnifiedSACCREngine:
             'table_3_implementation': 'Complete'
         }
 
+    def calculate_comprehensive_saccr(self, netting_set, collateral=None):
+        """Execute complete 24-step SA-CCR calculation."""
+        return self.calculate_dual_scenario_saccr(netting_set, collateral)
 # ==============================================================================
 # COMPLETE US SA-CCR ENGINE - PART 2: CALCULATION METHODS
 # ==============================================================================
