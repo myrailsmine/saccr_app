@@ -214,3 +214,163 @@ def _render_chat_history():
                     <br><small style="color: rgba(255,255,255,0.7);">{chat['timestamp'].strftime('%H:%M:%S')}</small>
                 </div>
                 """, unsafe_allow_html=True)
+
+
+def _render_ead_estimator():
+    """Render EAD estimation from natural language."""
+    st.markdown("### 📈 EAD Estimation from Trade Description")
+    st.markdown("Describe your trade in natural language and get an EAD estimate based on SA-CCR methodology.")
+    
+    # Trade description input
+    trade_description = st.text_area(
+        "Describe your derivative trade:",
+        placeholder="e.g., 5-year USD interest rate swap, receive fixed 3.5%, pay SOFR, notional $50 million, counterparty is JPMorgan",
+        height=100
+    )
+    
+    # Counterparty information (optional)
+    with st.expander("Optional: Counterparty Information"):
+        col1, col2 = st.columns(2)
+        with col1:
+            cp_name = st.text_input("Counterparty Name", placeholder="e.g., JPMorgan Chase")
+            cp_threshold = st.number_input("Threshold ($)", value=12000000, step=1000000)
+        with col2:
+            cp_type = st.selectbox("Counterparty Type", ["Corporate", "Bank", "Sovereign", "Non-Profit Org"])
+            cp_mta = st.number_input("MTA ($)", value=1000000, step=100000)
+    
+    if st.button("🎯 Estimate EAD", type="primary"):
+        if trade_description.strip():
+            with st.spinner("🤖 Analyzing trade description and calculating EAD..."):
+                try:
+                    # Initialize enhanced assistant
+                    if 'enhanced_assistant' not in st.session_state:
+                        st.session_state.enhanced_assistant = EnhancedSACCRAssistant()
+                    
+                    assistant = st.session_state.enhanced_assistant
+                    
+                    # Prepare counterparty info
+                    counterparty_info = {
+                        'name': cp_name if cp_name else 'Estimated Counterparty',
+                        'type': cp_type,
+                        'threshold': cp_threshold,
+                        'mta': cp_mta,
+                        'nica': 0
+                    }
+                    
+                    # Get EAD estimation
+                    estimation_result = assistant.estimate_ead_from_description(trade_description, counterparty_info)
+                    
+                    # Display results
+                    if 'error' not in estimation_result:
+                        st.success("✅ EAD Estimation Complete!")
+                        
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("💰 EAD Estimate", f"${estimation_result['ead_estimate']:,.0f}")
+                        with col2:
+                            st.metric("🏛️ Capital Estimate", f"${estimation_result['capital_estimate']:,.0f}")
+                        with col3:
+                            st.metric("🎯 Confidence Level", estimation_result['confidence_level'])
+                        
+                        # Show assumptions
+                        with st.expander("📋 Assumptions Made"):
+                            for assumption in estimation_result['trade_assumptions']:
+                                st.write(f"• {assumption}")
+                        
+                        # Show next steps
+                        with st.expander("🔍 Refinement Steps"):
+                            for step in estimation_result['next_steps']:
+                                st.write(f"• {step}")
+                    
+                    else:
+                        st.error(f"❌ {estimation_result['error']}")
+                        st.info(estimation_result.get('recommendation', 'Please provide more specific details.'))
+                
+                except Exception as e:
+                    st.error(f"Error during EAD estimation: {str(e)}")
+        else:
+            st.warning("Please describe your trade first.")
+
+
+def _render_step_guide():
+    """Render 24-step calculation guide."""
+    st.markdown("### 📋 24-Step SA-CCR Calculation Guide")
+    st.markdown("Get guided support through each step of the complete SA-CCR calculation process.")
+    
+    # Current step selection
+    current_step = st.number_input("Current Step", min_value=1, max_value=24, value=1)
+    
+    # Show step information
+    step_titles = {
+        1: "Netting Set Data", 2: "Asset Class Classification", 3: "Hedging Set Determination",
+        4: "Time Parameters (S, E, M)", 5: "Adjusted Notional", 6: "Maturity Factor",
+        7: "Supervisory Delta", 8: "Supervisory Factor", 9: "Adjusted Derivatives Contract Amount",
+        10: "Supervisory Correlation", 11: "Hedging Set Add-On", 12: "Asset Class Add-On",
+        13: "Aggregate Add-On", 14: "V, C Calculation", 15: "PFE Multiplier",
+        16: "PFE Calculation", 17: "CSA Parameters", 18: "Replacement Cost",
+        19: "CEU Flag", 20: "Alpha Calculation", 21: "EAD Calculation",
+        22: "Counterparty Information", 23: "Risk Weight Determination", 24: "RWA Calculation"
+    }
+    
+    st.markdown(f"#### Step {current_step}: {step_titles.get(current_step, 'Unknown Step')}")
+    
+    # Progress bar
+    progress = current_step / 24
+    st.progress(progress)
+    st.caption(f"Progress: {progress:.1%} complete")
+    
+    # Get guidance for current step
+    if st.button("📖 Get Step Guidance", type="primary"):
+        with st.spinner(f"🤖 Getting guidance for Step {current_step}..."):
+            try:
+                # Initialize enhanced assistant
+                if 'enhanced_assistant' not in st.session_state:
+                    st.session_state.enhanced_assistant = EnhancedSACCRAssistant()
+                
+                assistant = st.session_state.enhanced_assistant
+                
+                # Get step guidance
+                user_input = {
+                    'current_step': current_step,
+                    'data': {}  # Could be populated from previous steps
+                }
+                
+                guidance_result = assistant.guide_through_calculation(user_input)
+                
+                if 'error' not in guidance_result:
+                    st.success(f"✅ Guidance for Step {current_step}")
+                    
+                    # Display guidance
+                    st.markdown("**Step Explanation:**")
+                    st.write(guidance_result['guidance'])
+                    
+                    # Show required inputs
+                    if guidance_result.get('required_inputs'):
+                        st.markdown("**Required Inputs:**")
+                        for inp in guidance_result['required_inputs']:
+                            st.write(f"• {inp}")
+                    
+                    # Show example values
+                    if guidance_result.get('example_values'):
+                        with st.expander("📋 Reference Example (Lowell Hotel Properties)"):
+                            for key, value in guidance_result['example_values'].items():
+                                st.write(f"**{key}**: {value}")
+                
+                else:
+                    st.error(f"❌ {guidance_result['error']}")
+            
+            except Exception as e:
+                st.error(f"Error getting step guidance: {str(e)}")
+    
+    # Quick navigation
+    st.markdown("**Quick Navigation:**")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("⬅️ Previous Step") and current_step > 1:
+            st.rerun()
+    with col2:
+        if st.button("🏠 Reset to Step 1"):
+            st.rerun()
+    with col3:
+        if st.button("➡️ Next Step") and current_step < 24:
+            st.rerun()
